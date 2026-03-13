@@ -1027,6 +1027,49 @@ describe("Virtual server entry generation", () => {
 });
 
 describe("Plugin config", () => {
+  it("auto-injects @vitejs/plugin-react as a top-level async plugin", async () => {
+    const plugins = vinext() as any[];
+    const resolvedPlugins = (
+      await Promise.all(
+        plugins.map(async (plugin) => {
+          if (plugin && typeof plugin.then === "function") {
+            return await plugin;
+          }
+          return plugin;
+        }),
+      )
+    ).flat();
+
+    const hasReactPlugin = resolvedPlugins.some(
+      (plugin) => plugin && typeof plugin.name === "string" && plugin.name.startsWith("vite:react"),
+    );
+    expect(hasReactPlugin).toBe(true);
+  });
+
+  it("throws when user double-registers react() alongside auto-registration", async () => {
+    const plugins = vinext() as any[];
+    const configPlugin = plugins.find((p) => p.name === "vinext:config");
+    expect(configPlugin).toBeDefined();
+
+    await configPlugin.config(
+      { root: FIXTURE_DIR, plugins: [] },
+      { command: "serve", mode: "development" },
+    );
+
+    expect(() =>
+      configPlugin.configResolved({
+        command: "serve",
+        configFile: false,
+        plugins: [
+          { name: "vite:react-babel" },
+          { name: "vite:react-refresh" },
+          { name: "vite:react-babel" },
+          { name: "vite:react-refresh" },
+        ],
+      }),
+    ).toThrow("Duplicate @vitejs/plugin-react detected");
+  });
+
   it("adds resolve.dedupe for React packages to prevent dual instance errors", async () => {
     const plugins = vinext() as any[];
     const configPlugin = plugins.find((p) => p.name === "vinext:config");
