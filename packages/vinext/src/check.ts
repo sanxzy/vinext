@@ -569,16 +569,41 @@ export function checkConventions(root: string): CheckItem[] {
     }
   }
 
-  // Scan for ViewTransition import from react
+  // Scan all source files once for per-file checks:
+  //   - ViewTransition import from react
+  //   - free uses of __dirname / __filename (CJS globals, not available in ESM)
+  //
+  // For __dirname/__filename we use a single-pass alternation regex that skips over
+  // string literals, template literals, and comments before testing for the identifier,
+  // so tokens inside those contexts are never matched.
   const allSourceFiles = findSourceFiles(root);
   const viewTransitionRegex = /import\s+\{[^}]*\bViewTransition\b[^}]*\}\s+from\s+['"]react['"]/;
+  // Single-pass regex: skip tokens that can contain identifier-like text, expose everything else
+  // to the identifier capture branch. Template literals are skipped segment-by-segment between
+  // `${` boundaries — the `${...}` body itself is NOT consumed, so `__dirname` inside template
+  // expressions (e.g. `${__dirname}/views`) is correctly exposed to the identifier branch.
+  const cjsGlobalScanRegex =
+    /\/\/[^\n]*|\/\*[\s\S]*?\*\/|`(?:[^`\\$]|\\.|\$(?!\{))*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b(__dirname|__filename)\b/g;
   const viewTransitionFiles: string[] = [];
+  const cjsGlobalFiles: string[] = [];
   for (const file of allSourceFiles) {
     const content = fs.readFileSync(file, "utf-8");
+    const rel = path.relative(root, file);
+
     if (viewTransitionRegex.test(content)) {
-      viewTransitionFiles.push(path.relative(root, file));
+      viewTransitionFiles.push(rel);
+    }
+
+    cjsGlobalScanRegex.lastIndex = 0;
+    let m;
+    while ((m = cjsGlobalScanRegex.exec(content)) !== null) {
+      if (m[1]) {
+        cjsGlobalFiles.push(rel);
+        break;
+      }
     }
   }
+  // Emit items for the combined scan results
   if (viewTransitionFiles.length > 0) {
     items.push({
       name: "ViewTransition (React canary API)",
@@ -612,6 +637,16 @@ export function checkConventions(root: string): CheckItem[] {
       }
       break; // Only check the first config file found
     }
+  }
+
+  if (cjsGlobalFiles.length > 0) {
+    items.push({
+      name: "__dirname / __filename (CommonJS globals)",
+      status: "unsupported",
+      detail:
+        "CJS globals unavailable in ESM — use fileURLToPath(import.meta.url) / dirname(...), or import.meta.dirname / import.meta.filename (Node 22+)",
+      files: cjsGlobalFiles,
+    });
   }
 
   return items;
@@ -733,6 +768,11 @@ export function formatReport(result: CheckResult, opts?: { calledFromInit?: bool
     for (const item of allItems) {
       if (item.status === "unsupported") {
         lines.push(`    \x1b[31m✗\x1b[0m  ${item.name}${item.detail ? ` — ${item.detail}` : ""}`);
+        if (item.files && item.files.length > 0) {
+          for (const f of item.files) {
+            lines.push(`       \x1b[90m${f}\x1b[0m`);
+          }
+        }
       }
     }
   }
