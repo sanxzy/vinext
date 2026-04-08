@@ -230,6 +230,8 @@ export function buildAppPageRouteElement<
   const routeSlots = options.route.slots ?? {};
   const layoutEntries = createAppPageLayoutEntries(options.route);
   const routeThenableParams = options.makeThenableParams(options.matchedParams);
+  const getEffectiveSlotParams = (slotName: string): Record<string, string | string[]> =>
+    options.slotOverrides?.[slotName]?.params ?? options.matchedParams;
 
   for (let index = layoutEntries.length - 1; index >= 0; index--) {
     const layoutEntry = layoutEntries[index];
@@ -271,7 +273,7 @@ export function buildAppPageRouteElement<
       }
 
       const slotOverride = options.slotOverrides?.[slotName];
-      const slotParams = slotOverride?.params ?? options.matchedParams;
+      const slotParams = getEffectiveSlotParams(slotName);
       const slotComponent =
         getDefaultExport(slotOverride?.pageModule) ??
         getDefaultExport(slot.page) ??
@@ -332,12 +334,13 @@ export function buildAppPageRouteElement<
       if (index !== targetIndex) {
         continue;
       }
+      const slotParams = getEffectiveSlotParams(slotName);
       if (slot.routeSegments) {
         // Slot has an active page — resolve its segments (dynamic params → values)
         segmentMap[slotName] = resolveAppPageChildSegments(
           slot.routeSegments,
           0, // Slot segments are already relative to the slot root
-          options.matchedParams,
+          slotParams,
         );
       } else {
         // Slot is showing default.tsx or has no page — empty segments
