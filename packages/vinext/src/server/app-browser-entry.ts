@@ -75,6 +75,7 @@ import {
   type AppRouterState,
 } from "./app-browser-state.js";
 import { ElementsContext, Slot } from "../shims/slot.js";
+import { devOnCaughtError } from "./app-browser-error.js";
 
 type SearchParamInput = ConstructorParameters<typeof URLSearchParams>[0];
 
@@ -872,7 +873,7 @@ async function main(): Promise<void> {
       initialElements: root,
       initialNavigationSnapshot,
     }),
-    import.meta.env.DEV ? { onCaughtError() {} } : undefined,
+    import.meta.env.DEV ? { onCaughtError: devOnCaughtError } : undefined,
   );
   window.__VINEXT_HYDRATED_AT = performance.now();
 
