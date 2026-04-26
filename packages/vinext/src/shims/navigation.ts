@@ -16,6 +16,7 @@ import { createAppPayloadCacheKey } from "../server/app-elements.js";
 import { toBrowserNavigationHref, toSameOriginAppPath } from "./url-utils.js";
 import { stripBasePath } from "../utils/base-path.js";
 import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
+import { assertSafeNavigationUrl } from "./url-safety.js";
 
 // ─── Layout segment context ───────────────────────────────────────────────────
 // Stores the child segments below the current layout. Each layout wraps its
@@ -1241,12 +1242,14 @@ export async function navigateClientSide(
 
 const _appRouter = {
   push(href: string, options?: { scroll?: boolean }): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
     React.startTransition(() => {
       void navigateClientSide(href, "push", options?.scroll !== false, true);
     });
   },
   replace(href: string, options?: { scroll?: boolean }): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
     React.startTransition(() => {
       void navigateClientSide(href, "replace", options?.scroll !== false, true);
@@ -1272,6 +1275,7 @@ const _appRouter = {
     }
   },
   prefetch(href: string): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
     // Prefetch the RSC payload for the target route and store in cache.
     // We must add to prefetchedUrls manually for deduplication.
