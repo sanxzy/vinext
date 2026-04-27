@@ -686,7 +686,17 @@ export function createGoogleFontsPlugin(fontGoogleShimPath: string, shimsDir: st
         const fontLocals = new Map<string, string>();
         const proxyObjectLocals = new Set<string>();
 
-        const importRe = /^[ \t]*import\s+([^;]+?)\s+from\s*(["'])next\/font\/google\2\s*;?/gm;
+        // The clause is a sequence of either a brace block (`\{[^}]*?\}` —
+        // newlines allowed inside, but `[^}]` keeps it from spanning past
+        // the matching close brace) or a single non-`;` non-`\n` char.
+        // Effect: multi-line bracket imports (Prettier wraps past
+        // `printWidth`) match, but a preceding semicolon-less line
+        // (e.g. `import type { Metadata } from 'next'`) can't be swallowed
+        // into the clause via newline crossings. Both shapes used to fail
+        // silently — the rewrite was skipped because the resulting clause
+        // wasn't a valid single import.
+        const importRe =
+          /^[ \t]*import\s+((?:\{[^}]*?\}|[^;\n])+?)\s+from\s*(["'])next\/font\/google\2\s*;?/gm;
         let importMatch;
         while ((importMatch = importRe.exec(code)) !== null) {
           const [fullMatch, clause] = importMatch;
