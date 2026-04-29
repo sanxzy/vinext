@@ -239,6 +239,79 @@ describe("triggerBackgroundRegeneration", () => {
     consoleError.mockRestore();
   });
 
+  it("reports error via onRequestError handler when errorContext is provided", async () => {
+    const handler = vi.fn();
+    globalThis.__VINEXT_onRequestErrorHandler__ = handler;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const renderFn = vi.fn().mockRejectedValue(new Error("regen failed"));
+      triggerBackgroundRegeneration("regen-report-error", renderFn, {
+        routerKind: "App Router",
+        routePath: "/blog/[slug]",
+        routeType: "render",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(handler).toHaveBeenCalledOnce();
+      const [error, request, context] = handler.mock.calls[0];
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe("regen failed");
+      expect(request).toEqual({ path: "regen-report-error", method: "GET", headers: {} });
+      expect(context).toEqual({
+        routerKind: "App Router",
+        routePath: "/blog/[slug]",
+        routeType: "render",
+        revalidateReason: "stale",
+      });
+    } finally {
+      delete globalThis.__VINEXT_onRequestErrorHandler__;
+      consoleError.mockRestore();
+    }
+  });
+
+  it("does NOT call onRequestError handler when errorContext is omitted", async () => {
+    const handler = vi.fn();
+    globalThis.__VINEXT_onRequestErrorHandler__ = handler;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const renderFn = vi.fn().mockRejectedValue(new Error("regen failed"));
+      triggerBackgroundRegeneration("regen-no-ctx", renderFn);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(consoleError).toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      delete globalThis.__VINEXT_onRequestErrorHandler__;
+      consoleError.mockRestore();
+    }
+  });
+
+  it("wraps non-Error throw values in Error before reporting", async () => {
+    const handler = vi.fn();
+    globalThis.__VINEXT_onRequestErrorHandler__ = handler;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const renderFn = vi.fn().mockRejectedValue("string error");
+      triggerBackgroundRegeneration("regen-string-error", renderFn, {
+        routerKind: "Pages Router",
+        routePath: "/about",
+        routeType: "render",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(handler).toHaveBeenCalledOnce();
+      const [error] = handler.mock.calls[0];
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe("string error");
+    } finally {
+      delete globalThis.__VINEXT_onRequestErrorHandler__;
+      consoleError.mockRestore();
+    }
+  });
+
   it("different keys run independently", async () => {
     const renderFnA = vi.fn().mockResolvedValue(undefined);
     const renderFnB = vi.fn().mockResolvedValue(undefined);

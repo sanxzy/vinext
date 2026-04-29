@@ -532,10 +532,24 @@ async function __isrSet(key, data, revalidateSeconds, tags) {
 // headers — but that case is already prevented by the dynamic-usage opt-out.
 // TODO: capture render-time response headers for full Next.js parity.
 const __pendingRegenerations = new Map();
-function __triggerBackgroundRegeneration(key, renderFn) {
+function __triggerBackgroundRegeneration(key, renderFn, errorContext) {
   if (__pendingRegenerations.has(key)) return;
   const promise = renderFn()
-    .catch((err) => console.error("[vinext] ISR regen failed for " + key + ":", err))
+    .catch((err) => {
+      console.error("[vinext] ISR regen failed for " + key + ":", err);
+      if (errorContext) {
+        void _reportRequestError(
+          err instanceof Error ? err : new Error(String(err)),
+          { path: key, method: "GET", headers: {} },
+          {
+            routerKind: "App Router",
+            routePath: errorContext.routePath,
+            routeType: errorContext.routeType,
+            revalidateReason: "stale",
+          },
+        );
+      }
+    })
     .finally(() => __pendingRegenerations.delete(key));
   __pendingRegenerations.set(key, promise);
   const ctx = _getRequestExecutionContext();
@@ -1944,7 +1958,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
             await renderFn();
           });
         },
-        scheduleBackgroundRegeneration: __triggerBackgroundRegeneration,
+        scheduleBackgroundRegeneration(key, renderFn) {
+          __triggerBackgroundRegeneration(key, renderFn, { routePath: route.pattern, routeType: "route" });
+        },
         setHeadersAccessPhase,
         setNavigationContext,
       });
@@ -2139,7 +2155,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           return { html: __freshHtml, rscData: __freshRscData, tags: __pageTags };
         });
       },
-      scheduleBackgroundRegeneration: __triggerBackgroundRegeneration,
+      scheduleBackgroundRegeneration(key, renderFn) {
+        __triggerBackgroundRegeneration(key, renderFn, { routePath: route.pattern, routeType: "render" });
+      },
     });
     if (__cachedPageResponse) {
       return __cachedPageResponse;

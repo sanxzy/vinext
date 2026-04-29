@@ -22,6 +22,7 @@ import {
 } from "../shims/cache.js";
 import { fnv1a64 } from "../utils/hash.js";
 import { getRequestExecutionContext } from "../shims/request-context.js";
+import { reportRequestError, type OnRequestErrorContext } from "./instrumentation.js";
 
 export type ISRCacheEntry = {
   value: CacheHandlerValue;
@@ -84,13 +85,37 @@ const pendingRegenerations = (_g[_PENDING_REGEN_KEY] ??= new Map<string, Promise
  * On Cloudflare Workers the regeneration promise is registered with
  * `ctx.waitUntil()` via the ALS-backed ExecutionContext, keeping the isolate
  * alive until the regeneration completes even after the Response is returned.
+ *
+ * When `errorContext` is provided and the render function fails, the error
+ * is reported via `reportRequestError` (instrumentation hook) with
+ * `revalidateReason: "stale"`.
  */
-export function triggerBackgroundRegeneration(key: string, renderFn: () => Promise<void>): void {
+export function triggerBackgroundRegeneration(
+  key: string,
+  renderFn: () => Promise<void>,
+  errorContext?: {
+    routerKind: OnRequestErrorContext["routerKind"];
+    routePath: string;
+    routeType: OnRequestErrorContext["routeType"];
+  },
+): void {
   if (pendingRegenerations.has(key)) return;
 
   const promise = renderFn()
     .catch((err) => {
       console.error(`[vinext] ISR background regeneration failed for ${key}:`, err);
+      if (errorContext) {
+        void reportRequestError(
+          err instanceof Error ? err : new Error(String(err)),
+          { path: key, method: "GET", headers: {} },
+          {
+            routerKind: errorContext.routerKind,
+            routePath: errorContext.routePath,
+            routeType: errorContext.routeType,
+            revalidateReason: "stale",
+          },
+        );
+      }
     })
     .finally(() => {
       pendingRegenerations.delete(key);
